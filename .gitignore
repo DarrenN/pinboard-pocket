@@ -5,3 +5,9 @@
 *.scm~
 *.scm#*
 .#*.scm
+
+*.rkt~
+
+compiled
+pinboard2pocket
+pinboard-pocket
