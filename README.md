@@ -23,7 +23,7 @@ To build a distributable/exectuable on your platform of choice, simply `make bui
 Once you have an exectuable you can setup a `cron` task something like so (runs every 6 minutes):
 
 ```shell
-6 * * * * cd $HOME/pinboard-pocket; $HOME/pinboard-pocket > $HOME/logs/pinboard-pocket.log
+*/6 * * * * cd $HOME/pinboard-pocket; ./pinboard-pocket
 ```
 
 <img src="http://orig09.deviantart.net/8178/f/2011/109/0/b/dr_racket_dock_icon_by_andybaumgar-d3ee6mj.png" width="100" height="100" alt="Racket" title="Racket" />
