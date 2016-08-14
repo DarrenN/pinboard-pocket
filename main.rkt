@@ -6,7 +6,7 @@
 ;; Setup logging
 (define-logger pipeline)
 (define pipeline-receiver (make-log-receiver pipeline-logger 'info))
-(create-writer pipeline-receiver "pipeline.log")
+(create-writer pipeline-receiver "pinboard-pocket.log")
 
 ;; Setup API credentials (use getenv irl)
 (pinboard-api-token! (getenv "PINBOARD_API_TOKEN"))
