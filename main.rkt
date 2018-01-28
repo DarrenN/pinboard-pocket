@@ -17,7 +17,6 @@
 
     (define pinboard-posts (hash-ref (get-recent-pinboard) 'posts))
     (define pocket-urls (fetch-pocket-urls))
-    (log-pipeline-info "Got some data")
 
     (define pocket-queries
       (filter
@@ -36,7 +35,8 @@
 
         ; Any status other than 1 is a failure of some sort
         (if (equal? (hash-ref pocket-response 'status) 1)
-            (log-pipeline-info "Pocket import success")
+            (log-pipeline-info
+             (format "Pocket import success: ~a urls" (length queries)))
             (log-pipeline-error (format "Pocket import failue - status ~a"
                                         (hash-ref pocket-response 'status))))
 
@@ -45,8 +45,8 @@
 
     (if (empty? pocket-queries)
         (begin
-          (log-pipeline-info "Nothing to send to Pocket")
-          (println (format "~a Nothing to send to Pocket"
+          (log-pipeline-info "Nothing new to send to Pocket")
+          (println (format "~a Nothing new to send to Pocket"
                            (datetime->iso8601 (now/utc))))
           (log-writer))
         (send-pocket-queries pocket-queries))))
