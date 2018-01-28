@@ -48,4 +48,5 @@ Write log messages to file
       (loop))
     (thread loop))
   (lambda ()
+    (sleep 1)
     (custodian-shutdown-all log-cust)))
