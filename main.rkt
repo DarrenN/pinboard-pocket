@@ -46,7 +46,5 @@
     (if (empty? pocket-queries)
         (begin
           (log-pipeline-info "Nothing new to send to Pocket")
-          (println (format "~a Nothing new to send to Pocket"
-                           (datetime->iso8601 (now/utc))))
           (log-writer))
         (send-pocket-queries pocket-queries))))

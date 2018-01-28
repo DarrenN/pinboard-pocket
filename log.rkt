@@ -22,6 +22,8 @@ Write log messages to file
 
 |#
 
+(define log-dir (make-parameter "~"))
+
 ; Bind receiver to a lambda that accepts a fileport to write to
 (define (handle-log-message receiver)
   (λ (out)
@@ -39,10 +41,11 @@ Write log messages to file
 (define (create-writer log-receiver filename)
   (define log-cust (make-custodian))
   (parameterize ([current-custodian log-cust]
-                 [date-display-format 'iso-8601])
+                 [date-display-format 'iso-8601]
+                 [log-dir (getenv "LOG_DIR")])
     (define (loop)
       (call-with-output-file*
-       filename
+        (build-path (log-dir) filename)
        (handle-log-message log-receiver)
        #:exists 'append)
       (loop))

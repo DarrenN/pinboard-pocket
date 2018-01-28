@@ -19,7 +19,7 @@
 (define (auth-payload h)
   ;; Use ENV vars
   (parameterize ([pocket-access-token (getenv "POCKET_ACCESS_TOKEN")]
-                 [pocket-consumer-key (getenv "POCKET_CONSUMER_KEY")])    
+                 [pocket-consumer-key (getenv "POCKET_CONSUMER_KEY")])
     (hash-set* h
                'access_token (pocket-access-token)
                'consumer_key (pocket-consumer-key))))
@@ -38,7 +38,7 @@
           (auth-payload
            (hasheq 'detailType "simple"
                    'state "all"))))
-  
+
   ;; build a hash-table of archived URLs
   (for/hash ([url (hash-values (hash-ref archived 'list))])
     (values (hash-ref url 'given_url) 1)))
