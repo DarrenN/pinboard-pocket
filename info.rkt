@@ -3,10 +3,7 @@
 (define collection "pinboard-pocket")
 (define version "0.0.1")
 (define deps
-  '("base"
-    "date"
-    "match"
-    "json"
+  '("gregor"
     "https://github.com/DarrenN/racket-request.git#master"))
 
 (define build-deps
