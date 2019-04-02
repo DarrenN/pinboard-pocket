@@ -1,50 +1,29 @@
-#lang racket
-(require gregor
-         "log.rkt"
-         "pinboard.rkt"
-         "pocket-api.rkt")
+#lang racket/base
 
-;; Setup logging
-(define-logger pipeline)
-(define pipeline-receiver (make-log-receiver pipeline-logger 'info))
-(define log-writer (create-writer pipeline-receiver "pinboard-pocket.log"))
-
-;; Real simple: get recent Pinboard bookmarks with a readlater tag
-;; and add them to Pocket one-by-one (couldn't get batch add working)
 (module+ main
-  (with-handlers ([exn:fail:user?
-                   (λ (exn) (log-pipeline-error (exn-message exn)))])
+  (require "private/logger.rkt"
+           "private/parameters.rkt")
 
-    (define pinboard-posts (hash-ref (get-recent-pinboard) 'posts))
-    (define pocket-urls (fetch-pocket-urls))
+  (define stop-logger (get-config 'stop-logger))
+  (define logger (get-config 'logger))
 
-    (define pocket-queries
-      (filter
-       (λ (x) (not (void? x)))
-       (for/list ([post pinboard-posts])
-         (define url (hash-ref post 'href))
-         (when (not (hash-has-key? pocket-urls url))
-           (hasheq 'action "add"
-                   'url (hash-ref post 'href)
-                   'title (hash-ref post 'description)
-                   'tags (string-replace (hash-ref post 'tags) " " ","))))))
+  ; Create a JSON Logger we can add additional fields to
+  (define *json-logger*
+    (create-json-logger
+     logger
+     #:fields '(module "main")))
 
-    (define (send-pocket-queries queries)
-        (define pocket-response
-          (add-pocket-urls (hash 'actions pocket-queries)))
+  ; add additioal key/val fields
+  (*json-logger* 'msg "START"
+                 'slurm '("a" "b"))
 
-        ; Any status other than 1 is a failure of some sort
-        (if (equal? (hash-ref pocket-response 'status) 1)
-            (log-pipeline-info
-             (format "Pocket import success: ~a urls" (length queries)))
-            (log-pipeline-error (format "Pocket import failue - status ~a"
-                                        (hash-ref pocket-response 'status))))
+  ; values have to be valid jsexpr?
+  (*json-logger* 'flarm (hasheq 'foo 1))
 
-      ;; close logger
-      (log-writer))
+  (log-json-error *json-logger*)
+  (log-json-warn *json-logger*)
 
-    (if (empty? pocket-queries)
-        (begin
-          (log-pipeline-info "Nothing new to send to Pocket")
-          (log-writer))
-        (send-pocket-queries pocket-queries))))
+  (stop-logger))
+
+(module+ test
+  (require rackunit))
