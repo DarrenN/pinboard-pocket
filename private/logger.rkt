@@ -110,14 +110,14 @@ kill the logger if needed, ex:
 (define-syntax (define/json-logger stx)
   (syntax-case stx ()
     [(_ n body ...)
-     (with-syntax ([id (format-id #'n "log-json-~a" (syntax-e #'n))])
+     (with-syntax ([id (format-id #'n "log-json-~a" (syntax-e #'n))]
+                   [level (if (equal? (syntax-e #'n) 'warn)
+                              'warning (syntax-e #'n))])
        #'(define (id log-fs)
            (define-values (logger fields)
              (values (log-fields-logger log-fs)
                      (log-fields-data log-fs)))
-           (let ([level
-                  (if (equal? (syntax-e #'n) 'warn) 'warning (syntax-e #'n))])
-             (log-message logger level "" fields))))]))
+           (log-message logger (syntax-e #'level) "" fields)))]))
 
 
 ;//////////////////////////////////////////////////////////////////////////////
