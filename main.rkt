@@ -8,10 +8,7 @@
   (define logger (get-config 'logger))
 
   ; Create a JSON Logger we can add additional fields to
-  (define *json-logger*
-    (create-json-logger
-     logger
-     #:fields '(module "main")))
+  (define *json-logger* (create-json-logger logger #:fields '(module "main")))
 
   ; add additioal key/val fields
   (*json-logger* 'msg "START"
@@ -20,7 +17,7 @@
   ; values have to be valid jsexpr?
   (*json-logger* 'flarm (hasheq 'foo 1))
 
-  (log-json-error *json-logger*)
+  (log-json-info *json-logger*)
   (log-json-warn *json-logger*)
 
   (stop-logger))

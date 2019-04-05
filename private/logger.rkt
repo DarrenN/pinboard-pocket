@@ -6,10 +6,11 @@
          racket/match
          racket/string
          json
-         "path-utils.rkt")
+         "path-utils.rkt"
+         (for-syntax racket/base
+                     racket/syntax))
 
 (provide create-json-logger
-         log-json
          log-json-debug
          log-json-error
          log-json-fatal
@@ -71,11 +72,6 @@ kill the logger if needed, ex:
         data new-data
         #:combine/key (λ (k v1 v2) v2))))))
 
-(define (extract-fields log-fs)
-  (values (log-fields-logger log-fs)
-          (log-fields-level log-fs)
-          (log-fields-data log-fs)))
-
 ; Bind receiver to a lambda that accepts a fileport to write to
 ; NOTE: We use JSON formatted logs
 (define (handle-log-message receiver)
@@ -110,6 +106,19 @@ kill the logger if needed, ex:
     (sleep 1)
     (custodian-shutdown-all log-cust)))
 
+;; Macro: build a json logger for specific levels
+(define-syntax (define/json-logger stx)
+  (syntax-case stx ()
+    [(_ n body ...)
+     (with-syntax ([id (format-id #'n "log-json-~a" (syntax-e #'n))])
+       #'(define (id log-fs)
+           (define-values (logger fields)
+             (values (log-fields-logger log-fs)
+                     (log-fields-data log-fs)))
+           (let ([level
+                  (if (equal? (syntax-e #'n) 'warn) 'warning (syntax-e #'n))])
+             (log-message logger level "" fields))))]))
+
 
 ;//////////////////////////////////////////////////////////////////////////////
 ; PUBLIC
@@ -127,34 +136,10 @@ kill the logger if needed, ex:
     (log-fields logger level fs)))
 
 ; Convenience functions to log at specific levels
-(define (log-json-none log-fs)
-  (define-values (logger level fields) (extract-fields log-fs))
-  (log-message logger 'none "" fields))
-
-(define (log-json-fatal log-fs)
-  (define-values (logger level fields) (extract-fields log-fs))
-  (log-message logger 'fatal "" fields))
-
-(define (log-json-error log-fs)
-  (define-values (logger level fields) (extract-fields log-fs))
-  (log-message logger 'error "" fields))
-
-(define (log-json-warning log-fs)
-  (define-values (logger level fields) (extract-fields log-fs))
-  (log-message logger 'warning "" fields))
-
-(define (log-json-warn log-fs)
-  (log-json-warning log-fs))
-
-(define (log-json-info log-fs)
-  (define-values (logger level fields) (extract-fields log-fs))
-  (log-message logger 'info "" fields))
-
-(define (log-json-debug log-fs)
-  (define-values (logger level fields) (extract-fields log-fs))
-  (log-message logger 'debug "" fields))
-
-; Convenience function to pass relevant fields to log-message
-(define (log-json log-fs)
-  (define-values (logger level fields) (extract-fields log-fs))
-  (log-message logger level "" fields))
+(define/json-logger debug)
+(define/json-logger error)
+(define/json-logger fatal)
+(define/json-logger info)
+(define/json-logger none)
+(define/json-logger warn)
+(define/json-logger warning)
