@@ -1,6 +1,8 @@
 #lang racket/base
 
-(require racket/date
+(require racket/contract
+         racket/contract/region
+         racket/date
          racket/hash
          racket/logging
          racket/match
@@ -22,19 +24,61 @@
 
 #|
 
-Write log messages to file
-==========================
+Write structured log messages (JSON) to file
+============================================
 
-- Create a logger ex: (define-logger app) which will provide you
-with log-app-error, log-app-info, etc.
+First, setup a logger? and log-writer with setup-logger, ex:
 
-- Create a log receiver at the level you want to capture, ex:
-(define app-receiver (make-log-receiver app-logger 'info)), which
-will "listen" to log-app-info events.
+(define-values (my-logger stop-logger)
+  (setup-logger 'my-app-log        ; name of logger
+                (getenv "LOG_DIR") ; name/path of log dir
+                "myapp.log"        ; filename for log file
+                ))
 
-- Create log writer thread, storing the returned function so you can
-kill the logger if needed, ex:
-(define stop-logger (create-writer app-receiver "app.log"))
+my-logger is your custom logger
+stop-logger will terminate the logger and log-writer
+
+Next, setup a json-logger which you will use to send logs, ex:
+
+(define *json-logger*
+  (create-json-logger my-logger                 ; logger to send logs to
+                      #:fields '(module "main") ; options default log fields
+                      ))
+
+You can bind other jsexpr? fields to the json-logger, ex:
+
+; add additioal key/val fields
+(*json-logger* 'msg "START"
+               'slurm '("a" "b"))
+
+; remember, values have to be valid jsexpr?
+(*json-logger* 'flarm (hasheq 'foo 1))
+
+When you are ready to commit the log to the file, you can use the different
+level procs, ex:
+
+; Send at level INFO
+(log-json-info *json-logger*)
+
+; Send at level WARNING
+(log-json-warn *json-logger*)
+
+And the output log line should resemble:
+
+{
+ "flarm": {
+           "foo": 1
+           },
+ "level": "WARNING",
+ "msg": "START",
+ "timestamp": "2019-04-06T12:01:13",
+ "logname": "my-app-log",
+ "slurm": [
+           "a",
+           "b"
+           ],
+ "module": "main"
+ }
 
 |#
 
@@ -44,24 +88,10 @@ kill the logger if needed, ex:
 ; Mutable struct that implements prop:procedure allowing us to
 ; update the data field in place. This lets us bind more fields
 ; before logging with log-json.
-(struct log-fields (logger level data)
+(define-struct/contract log-fields
+  ([logger logger?] [level log-level/c] [data hash-eq?])
   #:transparent
   #:mutable
-  #:guard (λ (logger level data type-name)
-            (cond
-              [(not (logger? logger))
-               (error type-name
-                      "not a logger: ~e"
-                      logger)]
-              [(not (log-level/c level))
-               (error type-name
-                      "not a valid log-level: ~e"
-                      level)]
-              [(not (hash-eq? data))
-               (error type-name
-                      "not a hash-eq?: ~e"
-                      data)]
-              [else (values logger level data)]))
   #:property prop:procedure
   (λ (self . kvs)
     (let ([data (log-fields-data self)]
@@ -106,36 +136,44 @@ kill the logger if needed, ex:
     (sleep 1)
     (custodian-shutdown-all log-cust)))
 
-;; Macro: build a json logger for specific levels
+; Macro: build a json logger for specific levels
+; Aliases log-json-warn to log-json-warning
 (define-syntax (define/json-logger stx)
   (syntax-case stx ()
     [(_ n body ...)
      (with-syntax ([id (format-id #'n "log-json-~a" (syntax-e #'n))]
                    [level (if (equal? (syntax-e #'n) 'warn)
                               'warning (syntax-e #'n))])
-       #'(define (id log-fs)
-           (define-values (logger fields)
-             (values (log-fields-logger log-fs)
-                     (log-fields-data log-fs)))
-           (log-message logger (syntax-e #'level) "" fields)))]))
+       #'(define/contract (id log-fs)
+           (-> log-fields? void)
+           (let ([logger (log-fields-logger log-fs)]
+                 [fields (log-fields-data log-fs)])
+             (log-message logger (syntax-e #'level) "" fields))))]))
 
 
 ;//////////////////////////////////////////////////////////////////////////////
 ; PUBLIC
 
-(define (setup-logger topic dir filename)
+; Creates a logger? and log-receiver? that write JSON strings to dir/filename.
+; If the dir doesn't exist we'll try to create it.
+; Returns a function used to stop and shutdown the log-receiver and writer.
+(define/contract (setup-logger topic dir filename)
+  (-> symbol? (or/c string? path?) string? (values logger? procedure?))
   (define logger (make-logger topic))
   (define log-receiver (make-log-receiver logger 'info))
   (values logger (create-writer log-receiver dir filename)))
 
 ; Creates a log-fields struct loaded with initial values
-(define (create-json-logger logger
-                            #:level [level 'info]
-                            #:fields [fields (hasheq)])
+(define/contract (create-json-logger logger
+                                     #:level [level 'info]
+                                     #:fields [fields (hasheq)])
+  (->* (logger?) (#:level symbol? #:fields (or/c list? hash?)) log-fields?)
   (let ([fs (if (hash? fields) fields (apply hasheq fields))])
     (log-fields logger level fs)))
 
 ; Convenience functions to log at specific levels
+; ex: (log-json-info json-logger-struct)
+
 (define/json-logger debug)
 (define/json-logger error)
 (define/json-logger fatal)
