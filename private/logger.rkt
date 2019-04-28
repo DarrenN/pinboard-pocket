@@ -1,16 +1,11 @@
 #lang racket/base
 
-(require racket/contract
-         racket/contract/region
-         racket/date
-         racket/hash
-         racket/logging
-         racket/match
-         racket/string
+(require racket/require
+         (for-syntax (multi-in racket (base syntax)))
          json
-         "path-utils.rkt"
-         (for-syntax racket/base
-                     racket/syntax))
+         (multi-in racket
+                   (contract contract/region date hash logging match string))
+         "path-utils.rkt")
 
 (provide create-json-logger
          log-json-debug
@@ -20,7 +15,8 @@
          log-json-none
          log-json-warn
          log-json-warning
-         setup-logger)
+         setup-logger
+         with-logger)
 
 #|
 
@@ -85,22 +81,22 @@ And the output log line should resemble:
 ;//////////////////////////////////////////////////////////////////////////////
 ; PRIVATE
 
-; Mutable struct that implements prop:procedure allowing us to
-; update the data field in place. This lets us bind more fields
-; before logging with log-json.
+; Immutable struct that implements prop:procedure allowing us to
+; return a new struct with updates data fields. This lets us bind more fields
+; before logging with log-json and works well with with-logger.
 (define-struct/contract log-fields
   ([logger logger?] [level log-level/c] [data hash-eq?])
   #:transparent
-  #:mutable
   #:property prop:procedure
   (λ (self . kvs)
-    (let ([data (log-fields-data self)]
-          [new-data (apply hasheq kvs)])
-      (set-log-fields-data!
-       self
-       (hash-union
-        data new-data
-        #:combine/key (λ (k v1 v2) v2))))))
+    (let ([old-data (log-fields-data self)]
+          [new-data (apply hasheq kvs)]
+          [old-level (log-fields-level self)]
+          [old-logger (log-fields-logger self)])
+      (log-fields old-logger old-level
+                  (hash-union
+                   old-data new-data
+                   #:combine/key (λ (k v1 v2) v2))))))
 
 ; Bind receiver to a lambda that accepts a fileport to write to
 ; NOTE: We use JSON formatted logs
@@ -136,7 +132,7 @@ And the output log line should resemble:
     (sleep 1)
     (custodian-shutdown-all log-cust)))
 
-; Macro: build a json logger for specific levels
+; [Macro]: build a json logger for specific levels
 ; Aliases log-json-warn to log-json-warning
 (define-syntax (define/json-logger stx)
   (syntax-case stx ()
@@ -144,11 +140,15 @@ And the output log line should resemble:
      (with-syntax ([id (format-id #'n "log-json-~a" (syntax-e #'n))]
                    [level (if (equal? (syntax-e #'n) 'warn)
                               'warning (syntax-e #'n))])
-       #'(define/contract (id log-fs)
-           (-> log-fields? void)
+       #'(define/contract (id log-fs . kvs)
+           (->* (log-fields?) #:rest list? void)
            (let ([logger (log-fields-logger log-fs)]
-                 [fields (log-fields-data log-fs)])
-             (log-message logger (syntax-e #'level) "" fields))))]))
+                 [fields (log-fields-data log-fs)]
+                 [new-fields (apply hasheq kvs)])
+             (log-message logger (syntax-e #'level) ""
+                          (hash-union
+                           fields new-fields
+                           #:combine/key (λ (k v1 v2) v2))))))]))
 
 
 ;//////////////////////////////////////////////////////////////////////////////
@@ -172,7 +172,7 @@ And the output log line should resemble:
     (log-fields logger level fs)))
 
 ; Convenience functions to log at specific levels
-; ex: (log-json-info json-logger-struct)
+; ex: (log-json-info json-logger-struct . fields)
 
 (define/json-logger debug)
 (define/json-logger error)
@@ -181,3 +181,46 @@ And the output log line should resemble:
 (define/json-logger none)
 (define/json-logger warn)
 (define/json-logger warning)
+
+;; [Macro]
+;; Binds new fields to a json-logger struct within a new environment
+;; ex: (with-logger ([json-logger 'field1 "foo" 'field2 "bar"]) ...)
+(define-syntax (with-logger stx)
+  (syntax-case stx (with-logger)
+    [(_ ((log-struct fields ...)) body ...)
+     (with-syntax ([log-id (format-id #'log-struct "~a" (syntax-e #'log-struct))])
+       #'(let ([log-id (log-id fields ...)])
+           body ...))]))
+
+
+;//////////////////////////////////////////////////////////////////////////////
+; TESTS
+
+(module+ test
+  (require rackunit)
+
+  ; Setup logger (uses JSON structured logs)
+  (define-values (tlogger stop-tlogger)
+    (setup-logger 'test
+                  (find-system-path 'temp-dir)
+                  "logger-test.log"))
+
+  (define (get-data-key log-struct key)
+    (hash-ref (log-fields-data log-struct) key))
+
+  (test-case "with-logger"
+    (define tlog
+      (create-json-logger tlogger #:fields '(module "test")))
+
+    ; with-logger adds new fields
+    (with-logger ([tlog 'red-fish 1 'blue-fish 2])
+      (check-equal? (get-data-key tlog 'module) "test")
+      (check-equal? (get-data-key tlog 'red-fish) 1)
+      (check-equal? (get-data-key tlog 'blue-fish) 2)
+
+      ; can nest them to build up more fields
+      (with-logger ([tlog 'one-fish '("hi")])
+        (check-equal? (get-data-key tlog 'one-fish) '("hi"))
+        (check-equal? (get-data-key tlog 'module) "test")
+        (check-equal? (get-data-key tlog 'red-fish) 1)
+        (check-equal? (get-data-key tlog 'blue-fish) 2)))))
